@@ -14,8 +14,8 @@ const dbus = require('@homebridge/dbus-native');
 if (process.env.NODE_ENV === 'production') {
   dotenv.config({ path: path.join(__dirname, './.env.production') });
   console.log(exports.now() + "MODE: PRODUCTION");
-} else if (process.env.NODE_ENV === 'dev') {
-  dotenv.config({ path: path.join(__dirname, './.env.dev') });
+} else if (process.env.NODE_ENV === 'development') {
+  dotenv.config({ path: path.join(__dirname, './.env.development') });
   console.log(exports.now() + "MODE: DEVELOPMENT");
 } else {
   throw new Error(exports.now() + 'process.env.NODE_ENV is not set');
