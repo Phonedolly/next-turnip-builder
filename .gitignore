@@ -3,3 +3,6 @@
 .env.dev
 .env.production
 .env
+
+*.ecosystem.config.js
+*.env

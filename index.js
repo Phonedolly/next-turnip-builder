@@ -1,46 +1,107 @@
-const path = require('path')
-const dotenv = require('dotenv')
-const bodyParser = require('body-parser');
-const express = require('express');
-const cors = require('cors');
-const { format } = require('date-fns-tz');
-const Category = require('./schemas/category');
+import path from 'path'
+// import dotenv from 'dotenv'
+import { format } from 'date-fns-tz';
+import crocket from 'crocket';
+import fs from 'fs';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+import { fork } from 'child_process';
 
-/* initialize date function */
-exports.now = () => format(Date.now(), "yyyy-MM-dd hh:mm.ss") + ": ";
+const now = () => format(Date.now(), "yyyy-MM-dd hh:mm.ss") + ": ";
 
-const dbus = require('@homebridge/dbus-native');
+const runningBuildTasks = {};
 
-if (process.env.NODE_ENV === 'production') {
-  dotenv.config({ path: path.join(__dirname, './.env.production') });
-  console.log(exports.now() + "MODE: PRODUCTION");
-} else if (process.env.NODE_ENV === 'development') {
-  dotenv.config({ path: path.join(__dirname, './.env.development') });
-  console.log(exports.now() + "MODE: DEVELOPMENT");
-} else {
-  throw new Error(exports.now() + 'process.env.NODE_ENV is not set');
+const argv = yargs(hideBin(process.argv)).argv
+console.log(argv)
+const server = new crocket();
+
+if (fs.existsSync('/tmp/next-turnip.sock')) {
+  fs.rmSync('/tmp/next-turnip.sock');
 }
 
-const bus = dbus.sessionBus();
-const name = 'org.next.turnip';
-bus.connection.on('message', function (msg) {
-  if (
-    msg.destination === name &&
-    msg['interface'] === 'org.next.turnip.builder' &&
-    msg.path === '/0/1' &&
-    msg.body === 'BUILD_START'
-  ) {
-    const reply = {
-      type: dbus.messageType.methodReturn,
-      destination: msg.sender,
-      replySerial: msg.serial,
-      sender: name,
-      signature: 's',
-      body: [
-        'ATTEMPT_BUILD'
-      ]
-    };
-    bus.invoke(reply)
+server.listen({ path: '/tmp/next-turnip.sock' }, (err) => {
+  if (err) {
+    throw err;
   }
+  console.log('connected');
+  console.log('IPC Listening On /tmp/next-turnip.sock');
 });
-bus.requestName(name, 0);
+
+server.on('/request/getBuildConfig', (payload) => {
+  console.log(payload)
+  if (!fs.existsSync(path.join(path.resolve(), `${payload.projectName.toLowerCase()}.ecosystem.config.js`))) {
+    fs.writeFileSync(path.join(path.resolve(), `${payload.projectName.toLowerCase()}.ecosystem.config.js`), "");
+  }
+  if (!fs.existsSync(path.join(path.resolve(), `${payload.projectName.toLowerCase()}.env`))) {
+    fs.writeFileSync(path.join(path.resolve(), `${payload.projectName.toLowerCase()}.env`), "");
+  }
+  const pm2Config = fs.readFileSync(path.join(path.resolve(), `${payload.projectName.toLowerCase()}.ecosystem.config.js`)).toString()
+  const dotEnv = fs.readFileSync(path.join(path.resolve(), `${payload.projectName.toLowerCase()}.env`)).toString()
+  server.emit('/response/getBuildConfig', { pm2Config, dotEnv })
+})
+
+server.on('/request/setBuildConfig', (payload) => {
+  console.log(payload)
+  try {
+    fs.writeFileSync(path.join(path.resolve(), `${payload.projectName.toLowerCase()}.ecosystem.config.js`), payload.newPm2Config);
+    fs.writeFileSync(path.join(path.resolve(), `${payload.projectName.toLowerCase()}.env`), payload.newDotEnv)
+    server.emit('/response/setBuildConfig', { isSetBuildConfigSuccess: true });
+  } catch (err) {
+    console.error(err);
+    server.emit('/response/setBuildConfig', { isSetBuildConfigSuccess: false });
+  }
+})
+
+server.on('/request/startBuild', (payload) => {
+  console.log('start build');
+  console.log(payload);
+  /* Remove Running Build Task */
+  if (runningBuildTasks[`${payload.projectName}`] !== undefined) {
+    runningBuildTasks[`${payload.projectName}`].process.kill('SIGKILL');
+    delete runningBuildTasks[`${payload.projectName}`]
+    console.log('Removed Already Running Task');
+  }
+  const buildStartTime = Number(Date.now());
+  const newBuildTask = fork('./build.js', ['--repoUrl', payload.repoUrl, '--buildStartTime', buildStartTime, '--projectName', payload.projectName, '--homeDir', path.join(path.resolve())]);
+
+  runningBuildTasks[payload.projectName] = {
+    process: newBuildTask,
+    log: '',
+    buildStartTime,
+  }
+
+  newBuildTask.on('message', (msg) => {
+    // console.log(msg);
+    runningBuildTasks[`${payload.projectName}`].log += msg;
+    console.log(runningBuildTasks[`${payload.projectName}`].log)
+  })
+
+  // newBuildTask.send('hello2')
+  server.emit('/response/startBuild', {
+    request: payload,
+    isSuccessStartBuild: true,
+    buildStartTime
+  });
+  console.log(runningBuildTasks);
+})
+
+server.on('/request/getBuildStatus', (payload) => {
+  if (runningBuildTasks[`${[payload.projectName]}`] === undefined) {
+    console.error(`${payload.projectName} is not building`);
+    return server.emit('/response/getBuildStatus', {
+      projectName: payload.projectName,
+      log: null
+    })
+  }
+  // console.log(runningBuildTasks[`${payload.projectName}`])
+  server.emit('/response/getBuildStatus', {
+    projectName: payload.projectName,
+    log: runningBuildTasks[`${payload.projectName}`].log,
+    buildStartTime: runningBuildTasks[`${payload.projectName}`].buildStartTime,
+  })
+})
+
+server.on('error', (e) => {
+  console.error('Communication Error Occurred');
+  console.error(e);
+})
