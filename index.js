@@ -12,12 +12,27 @@ const now = () => format(Date.now(), "yyyy-MM-dd hh:mm.ss") + ": ";
 const runningBuildTasks = {};
 
 const argv = yargs(hideBin(process.argv)).argv
-console.log(argv)
-const server = new crocket();
 
 if (fs.existsSync('/tmp/next-turnip.sock')) {
   fs.rmSync('/tmp/next-turnip.sock');
 }
+
+/* Standalone Mode */
+if ((argv.initiate === true || argv.i === true) &&
+  (argv.projectName !== undefined || argv.p !== undefined)) {
+  const buildStartTime = Number(Date.now());
+  const newBuildTask = fork('./build.js', ['--buildStartTime', buildStartTime, '--projectName', argv.projectName, '--homeDir', path.join(path.resolve())]);
+  newBuildTask.on('message', (msg) => {
+  })
+  newBuildTask.on('exit', function() {
+    process.exit(0)
+  })
+} else if (argv.i === true && argv.projectName === undefined) {
+  console.log('projectName is not specified\n');
+  process.exit(0);
+}
+
+const server = new crocket();
 
 server.listen({ path: '/tmp/next-turnip.sock' }, (err) => {
   if (err) {
@@ -68,15 +83,24 @@ server.on('/request/startBuild', (payload) => {
     process: newBuildTask,
     log: '',
     buildStartTime,
+    isBuildFinished: false,
+    isBuildSuccess: undefined
   }
 
   newBuildTask.on('message', (msg) => {
-    // console.log(msg);
-    runningBuildTasks[`${payload.projectName}`].log += msg;
-    console.log(runningBuildTasks[`${payload.projectName}`].log)
+    if (typeof msg === 'string') {
+      runningBuildTasks[`${payload.projectName}`].log += '\n' + msg;
+    } else if (typeof msg === 'object') {
+      if (msg.isBuildSuccess === true) {
+        runningBuildTasks[`${payload.projectName}`].isBuildFinished = true;
+        runningBuildTasks[`${payload.projectName}`].isBuildSuccess = true;
+      } else if (msg.isBuildSuccess === false) {
+        runningBuildTasks[`${payload.projectName}`].isBuildFinished = true;
+        runningBuildTasks[`${payload.projectName}`].isBuildSuccess = false;
+      }
+    }
   })
 
-  // newBuildTask.send('hello2')
   server.emit('/response/startBuild', {
     request: payload,
     isSuccessStartBuild: true,
@@ -98,6 +122,8 @@ server.on('/request/getBuildStatus', (payload) => {
     projectName: payload.projectName,
     log: runningBuildTasks[`${payload.projectName}`].log,
     buildStartTime: runningBuildTasks[`${payload.projectName}`].buildStartTime,
+    isBuildFinished: runningBuildTasks[`${payload.projectName}`].isBuildFinished,
+    isBuildSuccess: runningBuildTasks[`${payload.projectName}`].isBuildSuccess
   })
 })
 
