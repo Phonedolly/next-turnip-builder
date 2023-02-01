@@ -32,21 +32,15 @@ try {
 }
 
 try {
-  let output = shell.exec(`git clone https://github.com/Phonedolly/next-turnip ${projectName}_${argv.buildStartTime}`);
-  process.send(output.toString());
-  process.send('cd project directory');
+  shell.exec(`git clone https://github.com/Phonedolly/next-turnip ${projectName}_${argv.buildStartTime}`);
   shell.cd(`${projectName}_${argv.buildStartTime}`);
-  process.send('run npm ci')
-  process.send(shell.exec(`npm ci`).toString());
-  process.send('start build...');
-  process.send(shell.exec(`REMOTE_PATTERNS_URLS=${config.parsed.REMOTE_PATTERNS_URLS} npm run build`).toString());
-  process.send('prepare pm2 service');
-  process.send(shell.exec(`pm2 delete ${projectName}`).toString());
+  shell.exec(`npm ci`).toString()
+  shell.exec(`REMOTE_PATTERNS_URLS=${config.parsed.REMOTE_PATTERNS_URLS} npm run build`).toString()
+  shell.exec(`pm2 delete ${projectName}`).toString()
   // shell.cp(path.join(homeDir, `${projectName}.ecosystem.config.js`), `./ecosystem.config.js`)
   fs.writeFileSync(path.join(homeDir, `ecosystem.config.js.tmp`), ecosystem)
   shell.mv(path.join(homeDir, `ecosystem.config.js.tmp`), './ecosystem.config.js')
-  process.send(shell.exec(`pm2 start ecosystem.config.js --env production`).toString());
-  process.send('build finished!');
+  shell.exec(`pm2 start ecosystem.config.js --env production`).toString()
   process.send({ isBuildSuccess: true })
 } catch (err) {
   console.error('build failed!');

@@ -24,12 +24,12 @@ if ((argv.initiate === true || argv.i === true) &&
   const newBuildTask = fork('./build.js', ['--buildStartTime', buildStartTime, '--projectName', argv.projectName, '--homeDir', path.join(path.resolve())]);
   newBuildTask.on('message', (msg) => {
   })
-  newBuildTask.on('exit', function() {
-    process.exit(0)
+  newBuildTask.on('exit', function () {
+    process.exit()
   })
 } else if (argv.i === true && argv.projectName === undefined) {
   console.log('projectName is not specified\n');
-  process.exit(0);
+  process.exit();
 }
 
 const server = new crocket();
@@ -77,8 +77,11 @@ server.on('/request/startBuild', (payload) => {
     console.log('Removed Already Running Task');
   }
   const buildStartTime = Number(Date.now());
-  const newBuildTask = fork('./build.js', ['--repoUrl', payload.repoUrl, '--buildStartTime', buildStartTime, '--projectName', payload.projectName, '--homeDir', path.join(path.resolve())]);
-
+  const newBuildTask = fork('./build.js', ['--repoUrl', payload.repoUrl, '--buildStartTime', buildStartTime, '--projectName', payload.projectName, '--homeDir', path.join(path.resolve())], { silent: true });
+  console.log(newBuildTask.stdout);
+  newBuildTask.stdout.on('data', (chunk) => {
+    runningBuildTasks[`${payload.projectName}`].log += '\n' + chunk;
+  })
   runningBuildTasks[payload.projectName] = {
     process: newBuildTask,
     log: '',
@@ -88,16 +91,12 @@ server.on('/request/startBuild', (payload) => {
   }
 
   newBuildTask.on('message', (msg) => {
-    if (typeof msg === 'string') {
-      runningBuildTasks[`${payload.projectName}`].log += '\n' + msg;
-    } else if (typeof msg === 'object') {
-      if (msg.isBuildSuccess === true) {
-        runningBuildTasks[`${payload.projectName}`].isBuildFinished = true;
-        runningBuildTasks[`${payload.projectName}`].isBuildSuccess = true;
-      } else if (msg.isBuildSuccess === false) {
-        runningBuildTasks[`${payload.projectName}`].isBuildFinished = true;
-        runningBuildTasks[`${payload.projectName}`].isBuildSuccess = false;
-      }
+    if (msg.isBuildSuccess === true) {
+      runningBuildTasks[`${payload.projectName}`].isBuildFinished = true;
+      runningBuildTasks[`${payload.projectName}`].isBuildSuccess = true;
+    } else {
+      runningBuildTasks[`${payload.projectName}`].isBuildFinished = true;
+      runningBuildTasks[`${payload.projectName}`].isBuildSuccess = false;
     }
   })
 
