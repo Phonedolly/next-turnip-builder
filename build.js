@@ -42,10 +42,12 @@ try {
   shell.mv(path.join(homeDir, `ecosystem.config.js.tmp`), './ecosystem.config.js')
   shell.exec(`pm2 start ecosystem.config.js --env production`).toString()
   process.send({ isBuildSuccess: true })
+  process.exit(0);
 } catch (err) {
   console.error('build failed!');
   console.error(err);
   process.send({ isBuildSuccess: false })
+  process.exit(1);
 }
 
 process.on('message', (message) => {
