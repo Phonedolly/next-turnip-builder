@@ -12,6 +12,7 @@
   "license": "MIT",
   "dependencies": {
     "@homebridge/dbus-native": "^0.5.0",
+    "axios": "^1.3.2",
     "crocket": "^1.0.15",
     "cross-env": "^7.0.3",
     "date-fns-tz": "^1.3.7",
